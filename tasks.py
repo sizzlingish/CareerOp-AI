@@ -12,415 +12,385 @@ from agents import (
 
 
 # ============================================================
-# 1. JOB ANALYSIS
+# 1. MANAGER TASK
+# ============================================================
+
+manager_task = Task(
+    description="""
+You are the Career Operations Manager.
+
+Analyze the user's career situation using the information provided
+below.
+
+CAREER REQUEST:
+{career_request}
+
+JOB DESCRIPTION:
+{job_description}
+
+CANDIDATE CV:
+{cv_text}
+
+Provide a structured career analysis that includes:
+
+1. Understanding of the user's career goal
+2. Important job requirements
+3. Relevant candidate strengths
+4. Potential gaps or weaknesses
+5. Recommended next steps
+6. Practical career strategy
+
+Only use information that is actually provided.
+
+Do not invent:
+- experience
+- qualifications
+- skills
+- achievements
+- employment history
+- company facts
+
+Clearly identify assumptions when necessary.
+""",
+    expected_output="""
+A structured career operations analysis containing:
+- Career goal
+- Job requirements
+- Candidate strengths
+- Potential gaps
+- Recommended actions
+- Practical next steps
+""",
+    agent=manager_agent,
+)
+
+
+# ============================================================
+# 2. JOB ANALYSIS TASK
 # ============================================================
 
 job_analysis_task = Task(
     description="""
-    Analyze the following job opportunity.
+Analyze the following job description.
 
-    JOB DESCRIPTION:
-    {job_description}
+JOB DESCRIPTION:
+{job_description}
 
-    Extract and organize:
+CAREER REQUEST:
+{career_request}
 
-    1. Job title
-    2. Required technical skills
-    3. Required soft skills
-    4. Required education
-    5. Required experience
-    6. Preferred qualifications
-    7. Main responsibilities
-    8. Important technologies and tools
-    9. Important keywords
-    10. Certifications or other requirements
+Identify and organize:
 
-    Clearly distinguish between required and preferred
-    qualifications.
+1. Job title
+2. Main responsibilities
+3. Required qualifications
+4. Preferred qualifications
+5. Technical skills
+6. Soft skills
+7. Education requirements
+8. Experience requirements
+9. Important tools, technologies, or certifications
+10. Important keywords
+11. Candidate expectations
+12. Any unclear or ambiguous requirements
 
-    Do not invent information that is not present in the
-    job description.
-    """,
+Separate required qualifications from preferred qualifications.
 
+Do not invent requirements that are not supported by the
+job description.
+""",
     expected_output="""
-    A structured job analysis containing:
-
-    - Job title
-    - Required skills
-    - Preferred skills
-    - Education requirements
-    - Experience requirements
-    - Responsibilities
-    - Technologies/tools
-    - Certifications
-    - Important keywords
-    - Other relevant requirements
-    """,
-
+A detailed job analysis containing:
+- Job title
+- Responsibilities
+- Required qualifications
+- Preferred qualifications
+- Technical skills
+- Soft skills
+- Education
+- Experience
+- Tools and technologies
+- Certifications
+- Keywords
+- Important observations
+""",
     agent=job_analyst_agent,
 )
 
 
 # ============================================================
-# 2. CV ANALYSIS
+# 3. CV ANALYSIS TASK
 # ============================================================
 
 cv_analysis_task = Task(
     description="""
-    Analyze the candidate's CV and compare it against the
-    job analysis produced by the previous task.
+Analyze the candidate's CV against the target job.
 
-    CANDIDATE CV:
-    {cv_text}
+CANDIDATE CV:
+{cv_text}
 
-    The previous task has already analyzed the job description.
-    Use that task's output as the job analysis.
+JOB DESCRIPTION:
+{job_description}
 
-    Identify:
+CAREER REQUEST:
+{career_request}
 
-    1. Relevant technical skills
-    2. Relevant soft skills
-    3. Relevant education
-    4. Relevant work experience
-    5. Relevant projects
-    6. Relevant achievements
-    7. Requirements clearly supported by the CV
-    8. Requirements that are only partially supported
-    9. Requirements with no supporting evidence
-    10. Skills or experience that should be emphasized
+Identify:
 
-    Do not invent experience or qualifications.
-    """,
+1. Candidate skills
+2. Education
+3. Work experience
+4. Projects
+5. Certifications
+6. Technical background
+7. Relevant achievements
+8. Strong matches with the job
+9. Missing or weak requirements
+10. Skills that should be emphasized
+11. CV areas that should be improved
+12. Important evidence supporting the candidate's suitability
 
+Only use evidence contained in the CV.
+
+Do not invent experience, skills, qualifications, achievements,
+projects, or certifications.
+""",
     expected_output="""
-    A structured CV-to-job matching report containing:
-
-    - Strong matches
-    - Partial matches
-    - Missing or unsupported requirements
-    - Relevant CV evidence
-    - Skills to emphasize
-    - Areas where the CV could be improved
-    """,
-
+A structured CV-to-job analysis containing:
+- Candidate profile
+- Skills
+- Education
+- Experience
+- Projects
+- Certifications
+- Strong matches
+- Missing requirements
+- Weak areas
+- Recommended CV improvements
+- Evidence-based observations
+""",
     agent=cv_agent,
-
-    context=[
-        job_analysis_task
-    ],
 )
 
 
 # ============================================================
-# 3. COMPANY RESEARCH
+# 4. COMPANY RESEARCH TASK
 # ============================================================
 
 company_research_task = Task(
     description="""
-    Research the organization associated with the job.
+Analyze the company and opportunity using only the information
+provided in the user's input.
 
-    JOB DESCRIPTION:
-    {job_description}
+JOB DESCRIPTION:
+{job_description}
 
-    Identify the organization if it is provided in the
-    job description.
+CAREER REQUEST:
+{career_request}
 
-    Research relevant factual information such as:
+CANDIDATE CV:
+{cv_text}
 
-    1. Company background
-    2. Products or services
-    3. Industry
-    4. Main business areas
-    5. Relevant technologies or areas of work
-    6. Recent publicly available developments
-    7. Information relevant to the specific role
+Provide:
 
-    Focus only on information that could help the candidate
-    understand the organization or prepare for the application
-    and interview.
+1. Company information that is explicitly available
+2. Products or services mentioned
+3. Industry or business area
+4. Role context
+5. Important themes from the job description
+6. Potential company priorities suggested by the role
+7. Useful points the candidate could research further
+8. Interview topics suggested by the opportunity
 
-    Clearly distinguish factual information from uncertainty.
+IMPORTANT:
 
-    Do not invent company information.
-    """,
+You do not have live web access in this task.
 
+Do not claim that you searched the internet.
+Do not invent company facts.
+Clearly distinguish supplied information from reasonable
+interpretations.
+""",
     expected_output="""
-    A concise company research report containing:
-
-    - Organization overview
-    - Products/services
-    - Industry
-    - Relevant work
-    - Relevant technologies
-    - Recent developments when available
-    - Useful interview/application context
-    """,
-
+A factual company and opportunity analysis containing:
+- Available company information
+- Industry/context
+- Role context
+- Important themes
+- Possible company priorities
+- Suggested research areas
+- Interview preparation topics
+""",
     agent=research_agent,
-
-    context=[
-        job_analysis_task
-    ],
 )
 
 
 # ============================================================
-# 4. APPLICATION
+# 5. APPLICATION TASK
 # ============================================================
 
 application_task = Task(
     description="""
-    Create tailored application materials using the outputs
-    produced by the previous career analysis tasks.
+Create professional application guidance for the candidate.
 
-    CANDIDATE CV:
-    {cv_text}
+CANDIDATE CV:
+{cv_text}
 
-    JOB DESCRIPTION:
-    {job_description}
+JOB DESCRIPTION:
+{job_description}
 
-    USER REQUEST:
-    {career_request}
+CAREER REQUEST:
+{career_request}
 
-    The previous tasks provide:
+Create useful, truthful application material including:
 
-    - Job analysis
-    - CV-to-job matching
-    - Company research
+1. Targeted professional summary
+2. CV improvement recommendations
+3. Important keywords to emphasize
+4. Suggested CV bullet improvements
+5. Cover letter structure or draft
+6. Application strategy
+7. Potential application questions and suggested answers
+8. Important points the candidate should communicate
 
-    Use those outputs when preparing the application.
+Everything must be based on the candidate's actual information.
 
-    Create:
+Do not invent:
+- experience
+- achievements
+- qualifications
+- skills
+- employment history
+- projects
+- certifications
 
-    1. Professional summary tailored to the role
-    2. Specific CV improvement recommendations
-    3. Skills that should be emphasized
-    4. Suggested improvements to relevant experience/project
-       descriptions
-    5. A customized cover letter
-    6. Suggested answers for important application questions
-       when appropriate
-
-    All content must remain truthful to the candidate's actual
-    background.
-
-    Never invent experience, qualifications, achievements,
-    employers, education, certifications, or skills.
-    """,
-
+If information is missing, clearly indicate what the candidate
+needs to provide instead of inventing it.
+""",
     expected_output="""
-    A complete application package containing:
-
-    - Tailored professional summary
-    - CV improvement recommendations
-    - Skills to emphasize
-    - Experience/project recommendations
-    - Customized cover letter
-    - Suggested application answers where appropriate
-    """,
-
+A professional application package containing:
+- Professional summary
+- CV recommendations
+- Keywords
+- Improved bullet suggestions
+- Cover letter content
+- Application strategy
+- Suggested application answers
+""",
     agent=application_agent,
-
-    context=[
-        job_analysis_task,
-        cv_analysis_task,
-        company_research_task,
-    ],
 )
 
 
 # ============================================================
-# 5. INTERVIEW PREPARATION
+# 6. INTERVIEW TASK
 # ============================================================
 
 interview_task = Task(
     description="""
-    Prepare the candidate for an interview for the target job.
+Prepare the candidate for an interview for the target job.
 
-    JOB DESCRIPTION:
-    {job_description}
+CANDIDATE CV:
+{cv_text}
 
-    CANDIDATE CV:
-    {cv_text}
+JOB DESCRIPTION:
+{job_description}
 
-    USER REQUEST:
-    {career_request}
+CAREER REQUEST:
+{career_request}
 
-    The previous tasks provide:
+Create:
 
-    - Job analysis
-    - CV-to-job matching
-    - Company research
-    - Application materials
+1. Technical interview questions
+2. Behavioral interview questions
+3. Situational questions
+4. Job-specific questions
+5. CV-based questions
+6. Questions about potential weaknesses or gaps
+7. Suggested answer structures
+8. STAR-style guidance where appropriate
+9. Topics the candidate should revise
+10. Questions the candidate can ask the interviewer
 
-    Use all of those outputs.
+Questions should be based on the actual job description and CV.
 
-    Create:
-
-    1. Ten likely interview questions
-    2. Technical questions relevant to the role
-    3. Behavioral questions
-    4. Situational questions
-    5. Suggested answer structures
-    6. Topics the candidate should revise
-    7. Questions the candidate could ask the interviewer
-
-    The preparation should be specific to the actual role and
-    candidate background.
-
-    Do not invent candidate experience.
-    """,
-
+Do not invent candidate experiences or achievements.
+Suggested answers must remain truthful.
+""",
     expected_output="""
-    A structured interview preparation guide containing:
-
-    - Likely interview questions
-    - Technical questions
-    - Behavioral questions
-    - Situational questions
-    - Answer preparation guidance
-    - Topics to revise
-    - Questions for the interviewer
-    """,
-
+A complete interview preparation guide containing:
+- Technical questions
+- Behavioral questions
+- Situational questions
+- Job-specific questions
+- CV-based questions
+- Gap/weakness questions
+- Answer frameworks
+- Preparation topics
+- Questions for the interviewer
+""",
     agent=interview_agent,
-
-    context=[
-        job_analysis_task,
-        cv_analysis_task,
-        company_research_task,
-        application_task,
-    ],
 )
 
 
 # ============================================================
-# 6. CRITIC / FINAL REVIEW
+# 7. CRITIC TASK
 # ============================================================
 
 critic_task = Task(
     description="""
-    Perform a final quality review of the complete career
-    application package.
+Act as a quality reviewer for the candidate's job application.
 
-    The previous tasks provide:
+CANDIDATE CV:
+{cv_text}
 
-    - Job analysis
-    - CV match
-    - Company research
-    - Application materials
-    - Interview preparation
+JOB DESCRIPTION:
+{job_description}
 
-    Review the complete package for:
+CAREER REQUEST:
+{career_request}
 
-    1. Missing job requirements
-    2. Weak evidence of required skills
-    3. Generic application content
-    4. Missing important keywords
-    5. Unsupported claims
-    6. Inconsistencies between the CV and application
-    7. Weak cover letter personalization
-    8. Interview preparation gaps
-    9. Missing important questions
-    10. Areas requiring revision
+Review the available information and identify:
 
-    Do not invent problems that are not supported by the
-    provided information.
+1. Missing job requirements
+2. Weak candidate evidence
+3. CV weaknesses
+4. Generic or weak application messaging
+5. Unsupported claims that should be avoided
+6. Important keywords that may be missing
+7. Interview preparation gaps
+8. Potential inconsistencies
+9. Areas requiring clarification
+10. Specific improvements the candidate should make
 
-    End the review with one of:
+Be precise and actionable.
 
-    APPROVED
-
-    or
-
-    NEEDS_REVISION
-    """,
-
+Do not invent facts about the candidate or employer.
+""",
     expected_output="""
-    A final quality review containing:
-
-    - Overall review status
-    - Strengths
-    - Missing requirements
-    - Weak areas
-    - Application issues
-    - Interview preparation issues
-    - Specific revision recommendations
-    - Final status: APPROVED or NEEDS_REVISION
-    """,
-
+A detailed quality review containing:
+- Missing requirements
+- Evidence gaps
+- CV weaknesses
+- Application weaknesses
+- Keyword gaps
+- Interview gaps
+- Potential inconsistencies
+- Specific recommended improvements
+""",
     agent=critic_agent,
-
-    context=[
-        job_analysis_task,
-        cv_analysis_task,
-        company_research_task,
-        application_task,
-        interview_task,
-    ],
 )
 
 
 # ============================================================
-# 7. MANAGER SUMMARY
+# TASK REGISTRY
 # ============================================================
 
-manager_task = Task(
-    description="""
-    Coordinate and summarize the complete career analysis
-    workflow for the user's request.
-
-    USER REQUEST:
-    {career_request}
-
-    JOB DESCRIPTION:
-    {job_description}
-
-    CANDIDATE CV:
-    {cv_text}
-
-    The previous tasks provide all specialized analysis.
-
-    Review their outputs and produce a final career operations
-    summary that addresses the user's request.
-
-    Identify:
-
-    1. Main job requirements
-    2. Candidate's strongest relevant evidence
-    3. Important gaps or unsupported requirements
-    4. Application preparation status
-    5. Interview preparation status
-    6. Critic/review status
-    7. Recommended next actions
-
-    Do not invent candidate information.
-
-    Do not claim that the candidate has experience or skills
-    that are not supported by the CV.
-    """,
-
-    expected_output="""
-    A final career operations summary containing:
-
-    - User's objective
-    - Summary of job requirements
-    - Summary of candidate match
-    - Application status
-    - Interview preparation status
-    - Critic status
-    - Recommended next actions
-    """,
-
-    agent=manager_agent,
-
-    context=[
-        job_analysis_task,
-        cv_analysis_task,
-        company_research_task,
-        application_task,
-        interview_task,
-        critic_task,
-    ],
-)
-
+TASKS = {
+    "Manager": manager_task,
+    "Job Analyst": job_analysis_task,
+    "CV Analyst": cv_analysis_task,
+    "Research Agent": company_research_task,
+    "Application Agent": application_task,
+    "Interview Agent": interview_task,
+    "Critic Agent": critic_task,
+}
