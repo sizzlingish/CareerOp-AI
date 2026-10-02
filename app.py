@@ -1,3 +1,4 @@
+```python
 import os
 import tempfile
 
@@ -44,31 +45,24 @@ st.set_page_config(
 # Session State
 # ============================================================
 
-if "cv_text" not in st.session_state:
-    st.session_state.cv_text = ""
+DEFAULT_STATE = {
+    "cv_text": "",
+    "cv_filename": "",
+    "cv_input_method": "Upload CV",
+    "job_description": "",
+    "career_request": "",
+    "analysis_started": False,
+    "analysis_complete": False,
+    "analysis_error": "",
+    "crew_result": None,
+    "career_memory": None,
+}
 
-if "cv_filename" not in st.session_state:
-    st.session_state.cv_filename = ""
+for key, default_value in DEFAULT_STATE.items():
+    if key not in st.session_state:
+        st.session_state[key] = default_value
 
-if "job_description" not in st.session_state:
-    st.session_state.job_description = ""
-
-if "career_request" not in st.session_state:
-    st.session_state.career_request = ""
-
-if "analysis_started" not in st.session_state:
-    st.session_state.analysis_started = False
-
-if "analysis_complete" not in st.session_state:
-    st.session_state.analysis_complete = False
-
-if "analysis_error" not in st.session_state:
-    st.session_state.analysis_error = ""
-
-if "crew_result" not in st.session_state:
-    st.session_state.crew_result = None
-
-if "career_memory" not in st.session_state:
+if st.session_state.career_memory is None:
     st.session_state.career_memory = CareerMemory()
 
 
@@ -92,29 +86,30 @@ def result_to_text(result):
 
 def extract_task_output(result, task):
     """
-    Try to retrieve the output of a specific task from the
-    final CrewAI result.
-
-    CrewAI versions can expose task outputs slightly
-    differently, so this function uses safe fallbacks.
+    Safely retrieve the output of a specific CrewAI task.
     """
 
+    # Try task.output first
     try:
         if hasattr(task, "output") and task.output is not None:
             return result_to_text(task.output)
     except Exception:
         pass
 
+    # Try result.tasks_output
     try:
         if hasattr(result, "tasks_output"):
+
             outputs = result.tasks_output
 
             for output in outputs:
+
                 if getattr(output, "task", None) == task:
                     return result_to_text(output)
 
             if outputs:
                 return result_to_text(outputs[-1])
+
     except Exception:
         pass
 
@@ -123,49 +118,95 @@ def extract_task_output(result, task):
 
 def save_uploaded_cv(uploaded_file):
     """
-    Save the uploaded CV temporarily and extract its text.
+    Save an uploaded PDF/TXT temporarily and extract its text.
     """
 
-    suffix = ".pdf"
+    filename = uploaded_file.name.lower()
 
-    if uploaded_file.name.lower().endswith(".txt"):
+    if filename.endswith(".pdf"):
+        suffix = ".pdf"
+
+    elif filename.endswith(".txt"):
         suffix = ".txt"
+
+    else:
+        raise ValueError(
+            "Unsupported file type. Please upload PDF or TXT."
+        )
 
     temp_path = None
 
     try:
+
         with tempfile.NamedTemporaryFile(
             delete=False,
             suffix=suffix
         ) as temp_file:
 
-            temp_file.write(uploaded_file.getvalue())
+            temp_file.write(
+                uploaded_file.getvalue()
+            )
+
             temp_path = temp_file.name
 
-        if suffix == ".pdf":
-            cv_text = extract_cv_text(temp_path)
-        else:
+        # TXT files don't need PDF extraction
+        if suffix == ".txt":
+
             cv_text = uploaded_file.getvalue().decode(
                 "utf-8",
                 errors="ignore"
             )
 
+        else:
+
+            cv_text = extract_cv_text(temp_path)
+
         return cv_text
 
     finally:
+
         if temp_path and os.path.exists(temp_path):
+
             try:
                 os.remove(temp_path)
+
             except Exception:
                 pass
 
+
+def reset_analysis():
+
+    st.session_state.analysis_started = False
+    st.session_state.analysis_complete = False
+    st.session_state.analysis_error = ""
+    st.session_state.crew_result = None
+
+
+def reset_everything():
+
+    st.session_state.cv_text = ""
+    st.session_state.cv_filename = ""
+    st.session_state.cv_input_method = "Upload CV"
+    st.session_state.job_description = ""
+    st.session_state.career_request = ""
+    st.session_state.analysis_started = False
+    st.session_state.analysis_complete = False
+    st.session_state.analysis_error = ""
+    st.session_state.crew_result = None
+    st.session_state.career_memory = CareerMemory()
+
+
+# ============================================================
+# Crew Creation
+# ============================================================
 
 def create_crew():
     """
     Create the CareerOps Crew.
 
-    The tasks already contain their dependencies through
-    the `context` arguments in tasks.py.
+    IMPORTANT:
+    Task dependencies should be defined in tasks.py using
+    CrewAI's context=[previous_task] mechanism.
     """
 
     crew = Crew(
@@ -178,6 +219,7 @@ def create_crew():
             critic_agent,
             manager_agent,
         ],
+
         tasks=[
             job_analysis_task,
             cv_analysis_task,
@@ -187,31 +229,50 @@ def create_crew():
             critic_task,
             manager_task,
         ],
+
         process=Process.sequential,
+
         verbose=True,
     )
 
     return crew
 
 
+# ============================================================
+# Run Career Analysis
+# ============================================================
+
 def run_career_analysis(
     cv_text,
     job_description,
     career_request
 ):
-    """
-    Run the complete CareerOps workflow.
-    """
 
     memory = CareerMemory()
 
     memory.set_candidate_cv(cv_text)
+
     memory.set_job(job_description)
 
     memory.update_stage("Starting")
+
     memory.update_status("Running")
 
     crew = create_crew()
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # These are the ONLY initial variables supplied to CrewAI.
+    #
+    # Therefore tasks.py should only use:
+    #
+    # {cv_text}
+    # {job_description}
+    # {career_request}
+    #
+    # Any result such as job_analysis must come from
+    # a previous task through context=[...].
+    # --------------------------------------------------------
 
     inputs = {
         "cv_text": cv_text,
@@ -219,10 +280,12 @@ def run_career_analysis(
         "career_request": career_request,
     }
 
-    result = crew.kickoff(inputs=inputs)
+    result = crew.kickoff(
+        inputs=inputs
+    )
 
     # --------------------------------------------------------
-    # Save individual task results
+    # Extract individual task results
     # --------------------------------------------------------
 
     job_result = extract_task_output(
@@ -261,7 +324,7 @@ def run_career_analysis(
     )
 
     # --------------------------------------------------------
-    # Store results
+    # Store results in CareerMemory
     # --------------------------------------------------------
 
     memory.save_job_analysis({
@@ -293,6 +356,7 @@ def run_career_analysis(
     })
 
     memory.update_stage("Completed")
+
     memory.update_status("Completed")
 
     return result, memory
@@ -311,8 +375,8 @@ with st.sidebar:
         ### AI Career Assistant
 
         CareerOps AI analyzes your CV and target job,
-        then prepares a complete application and
-        interview package.
+        researches the organization, prepares application
+        materials, and generates interview preparation.
         """
     )
 
@@ -338,15 +402,8 @@ with st.sidebar:
         "🔄 Reset Session",
         use_container_width=True
     ):
-        st.session_state.cv_text = ""
-        st.session_state.cv_filename = ""
-        st.session_state.job_description = ""
-        st.session_state.career_request = ""
-        st.session_state.analysis_started = False
-        st.session_state.analysis_complete = False
-        st.session_state.analysis_error = ""
-        st.session_state.crew_result = None
-        st.session_state.career_memory = CareerMemory()
+
+        reset_everything()
 
         st.rerun()
 
@@ -361,10 +418,8 @@ st.markdown(
     """
     ### Your AI-powered career operations assistant
 
-    Upload your CV, provide a job description, and let
-    CareerOps AI analyze the opportunity, match your
-    experience, research the organization, prepare your
-    application, and generate interview preparation.
+    Provide your CV, paste a job description, and tell
+    CareerOps AI what you need help with.
     """
 )
 
@@ -372,56 +427,175 @@ st.divider()
 
 
 # ============================================================
-# CV Upload
+# CV INPUT
 # ============================================================
 
 st.subheader("📄 Your CV")
 
-uploaded_cv = st.file_uploader(
-    "Upload your CV",
-    type=["pdf", "txt"],
-    help="Upload your CV as a PDF or text file.",
+st.markdown(
+    "Choose how you want to provide your CV:"
 )
 
-if uploaded_cv is not None:
+cv_input_method = st.radio(
+    "CV input method",
+    [
+        "Upload CV",
+        "Paste CV text",
+    ],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
-    st.session_state.cv_filename = uploaded_cv.name
+st.session_state.cv_input_method = cv_input_method
 
-    try:
 
-        with st.spinner("Reading your CV..."):
+# ============================================================
+# Upload CV
+# ============================================================
 
-            cv_text = save_uploaded_cv(uploaded_cv)
+if cv_input_method == "Upload CV":
 
-        st.session_state.cv_text = cv_text
+    uploaded_cv = st.file_uploader(
+        "Upload your CV",
+        type=["pdf", "txt"],
+        help="Upload your CV as a PDF or TXT file.",
+    )
 
-        if cv_text.startswith("Unable to extract"):
-            st.error(cv_text)
+    if uploaded_cv is not None:
 
-        elif cv_text.startswith("No readable text"):
-            st.warning(cv_text)
+        # Avoid unnecessarily re-processing the same file
+        if (
+            st.session_state.cv_filename
+            != uploaded_cv.name
+        ):
 
-        else:
-            st.success(
-                f"CV uploaded and extracted: "
-                f"{uploaded_cv.name}"
-            )
+            try:
 
-            with st.expander("Preview extracted CV text"):
+                with st.spinner(
+                    "📄 Reading your CV..."
+                ):
 
-                preview = cv_text[:5000]
-
-                st.text(preview)
-
-                if len(cv_text) > 5000:
-                    st.caption(
-                        "Showing the first 5,000 characters."
+                    cv_text = save_uploaded_cv(
+                        uploaded_cv
                     )
 
-    except Exception as error:
+                st.session_state.cv_text = cv_text
 
-        st.error(
-            f"Could not process the CV: {error}"
+                st.session_state.cv_filename = (
+                    uploaded_cv.name
+                )
+
+                # Reset old analysis because CV changed
+                reset_analysis()
+
+                if not cv_text.strip():
+
+                    st.warning(
+                        "The uploaded file does not contain "
+                        "readable CV text."
+                    )
+
+                elif cv_text.startswith(
+                    "Unable to extract"
+                ):
+
+                    st.error(cv_text)
+
+                elif cv_text.startswith(
+                    "No readable text"
+                ):
+
+                    st.warning(cv_text)
+
+                else:
+
+                    st.success(
+                        f"CV uploaded successfully: "
+                        f"{uploaded_cv.name}"
+                    )
+
+            except Exception as error:
+
+                st.error(
+                    f"Could not process the CV: {error}"
+                )
+
+        else:
+
+            st.success(
+                f"CV ready: {uploaded_cv.name}"
+            )
+
+    # Preview uploaded CV
+    if st.session_state.cv_text.strip():
+
+        with st.expander(
+            "👀 Preview CV text"
+        ):
+
+            preview = (
+                st.session_state.cv_text[:5000]
+            )
+
+            st.text(preview)
+
+            if len(
+                st.session_state.cv_text
+            ) > 5000:
+
+                st.caption(
+                    "Showing the first 5,000 characters."
+                )
+
+
+# ============================================================
+# Paste CV
+# ============================================================
+
+else:
+
+    pasted_cv = st.text_area(
+        "Paste your CV text here",
+        value=st.session_state.cv_text,
+        height=400,
+        placeholder=(
+            "Paste the complete text of your CV here...\n\n"
+            "Example:\n"
+            "John Smith\n"
+            "Senior Data Engineer\n\n"
+            "Experience\n"
+            "...\n\n"
+            "Skills\n"
+            "Python, SQL, AWS, Databricks..."
+        ),
+        help=(
+            "You can paste the full text of your CV "
+            "directly into this box."
+        ),
+    )
+
+    # Only update if the text changed
+    if pasted_cv != st.session_state.cv_text:
+
+        st.session_state.cv_text = pasted_cv
+
+        st.session_state.cv_filename = (
+            "Pasted CV"
+        )
+
+        reset_analysis()
+
+    if pasted_cv.strip():
+
+        st.success(
+            f"CV text ready — "
+            f"{len(pasted_cv):,} characters"
+        )
+
+    else:
+
+        st.info(
+            "Paste your CV text above to continue."
         )
 
 
@@ -434,13 +608,22 @@ st.subheader("💼 Target Job")
 job_description = st.text_area(
     "Paste the job description",
     value=st.session_state.job_description,
-    height=300,
+    height=350,
     placeholder=(
-        "Paste the complete job description here..."
+        "Paste the complete job description here...\n\n"
+        "Include the job title, responsibilities, "
+        "requirements, qualifications, skills, and "
+        "company information if available."
     ),
 )
 
-st.session_state.job_description = job_description
+if job_description != st.session_state.job_description:
+
+    st.session_state.job_description = (
+        job_description
+    )
+
+    reset_analysis()
 
 
 # ============================================================
@@ -450,16 +633,80 @@ st.session_state.job_description = job_description
 st.subheader("🎯 Career Request")
 
 career_request = st.text_area(
-    "Describe what you want CareerOps AI to help with",
+    "What would you like CareerOps AI to help with?",
     value=st.session_state.career_request,
     placeholder=(
-        "Example: Help me apply for this Security Analyst "
-        "position and prepare me for the interview."
+        "Example:\n"
+        "Help me apply for this job. Identify my strengths "
+        "and gaps, tailor my application, write a cover "
+        "letter, and prepare me for the interview."
     ),
-    height=120,
+    height=150,
 )
 
 st.session_state.career_request = career_request
+
+
+# ============================================================
+# Input Summary
+# ============================================================
+
+if (
+    st.session_state.cv_text.strip()
+    or job_description.strip()
+):
+
+    st.divider()
+
+    st.subheader("✅ Application Input Check")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        if st.session_state.cv_text.strip():
+
+            st.success(
+                f"📄 CV ready\n\n"
+                f"{len(st.session_state.cv_text):,} "
+                f"characters"
+            )
+
+        else:
+
+            st.warning(
+                "📄 CV missing"
+            )
+
+    with col2:
+
+        if job_description.strip():
+
+            st.success(
+                f"💼 Job description ready\n\n"
+                f"{len(job_description):,} "
+                f"characters"
+            )
+
+        else:
+
+            st.warning(
+                "💼 Job description missing"
+            )
+
+    with col3:
+
+        if career_request.strip():
+
+            st.success(
+                "🎯 Career request ready"
+            )
+
+        else:
+
+            st.info(
+                "🎯 Career request optional"
+            )
 
 
 # ============================================================
@@ -484,25 +731,25 @@ if start_analysis:
     if not st.session_state.cv_text.strip():
 
         st.warning(
-            "Please upload a readable CV first."
+            "📄 Please upload your CV or paste your CV "
+            "text first."
         )
 
     elif not job_description.strip():
 
         st.warning(
-            "Please provide a job description."
+            "💼 Please provide a job description."
         )
 
     else:
 
         st.session_state.analysis_started = True
-        st.session_state.analysis_complete = False
-        st.session_state.analysis_error = ""
-        st.session_state.crew_result = None
 
-        # ----------------------------------------------------
-        # Run CrewAI
-        # ----------------------------------------------------
+        st.session_state.analysis_complete = False
+
+        st.session_state.analysis_error = ""
+
+        st.session_state.crew_result = None
 
         progress = st.progress(0)
 
@@ -557,7 +804,9 @@ if start_analysis:
             )
 
             st.session_state.crew_result = result
+
             st.session_state.career_memory = memory
+
             st.session_state.analysis_complete = True
 
             progress.progress(100)
@@ -568,7 +817,10 @@ if start_analysis:
 
         except Exception as error:
 
-            st.session_state.analysis_error = str(error)
+            st.session_state.analysis_error = (
+                str(error)
+            )
+
             st.session_state.analysis_complete = False
 
             progress.empty()
@@ -582,8 +834,9 @@ if start_analysis:
             )
 
             with st.expander(
-                "Technical error details"
+                "🔧 Technical error details"
             ):
+
                 st.exception(error)
 
 
@@ -600,7 +853,7 @@ if st.session_state.analysis_started:
         memory = st.session_state.career_memory
 
         st.success(
-            "Your CareerOps AI analysis is ready."
+            "🎉 Your CareerOps AI analysis is ready."
         )
 
         # ----------------------------------------------------
@@ -610,24 +863,28 @@ if st.session_state.analysis_started:
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
+
             st.metric(
                 "Workflow",
                 memory.workflow_status
             )
 
         with col2:
+
             st.metric(
                 "Current Stage",
                 memory.current_stage
             )
 
         with col3:
+
             st.metric(
                 "Revision Count",
                 memory.revision_count
             )
 
         with col4:
+
             st.metric(
                 "CV Characters",
                 f"{len(memory.cv_text):,}"
@@ -659,17 +916,21 @@ if st.session_state.analysis_started:
             ]
         )
 
-        # ====================================================
+        # ----------------------------------------------------
         # Job Analysis
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_job:
 
-            st.subheader("🔎 Job Analysis")
+            st.subheader(
+                "🔎 Job Analysis"
+            )
 
-            job_content = memory.job_analysis.get(
-                "content",
-                ""
+            job_content = (
+                memory.job_analysis.get(
+                    "content",
+                    ""
+                )
             )
 
             if job_content:
@@ -682,17 +943,21 @@ if st.session_state.analysis_started:
                     "No job analysis result was returned."
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # CV Match
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_cv:
 
-            st.subheader("📄 CV-to-Job Match")
+            st.subheader(
+                "📄 CV-to-Job Match"
+            )
 
-            cv_content = memory.cv_analysis.get(
-                "content",
-                ""
+            cv_content = (
+                memory.cv_analysis.get(
+                    "content",
+                    ""
+                )
             )
 
             if cv_content:
@@ -705,13 +970,15 @@ if st.session_state.analysis_started:
                     "No CV analysis result was returned."
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # Company Research
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_research:
 
-            st.subheader("🏢 Company Research")
+            st.subheader(
+                "🏢 Company Research"
+            )
 
             research_content = (
                 memory.company_research.get(
@@ -730,9 +997,9 @@ if st.session_state.analysis_started:
                     "No company research result was returned."
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # Application
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_application:
 
@@ -749,7 +1016,9 @@ if st.session_state.analysis_started:
 
             if application_content:
 
-                st.markdown(application_content)
+                st.markdown(
+                    application_content
+                )
 
             else:
 
@@ -757,9 +1026,9 @@ if st.session_state.analysis_started:
                     "No application materials were returned."
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # Interview
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_interview:
 
@@ -776,7 +1045,9 @@ if st.session_state.analysis_started:
 
             if interview_content:
 
-                st.markdown(interview_content)
+                st.markdown(
+                    interview_content
+                )
 
             else:
 
@@ -784,9 +1055,9 @@ if st.session_state.analysis_started:
                     "No interview preparation was returned."
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # Critic Review
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_review:
 
@@ -794,14 +1065,18 @@ if st.session_state.analysis_started:
                 "🧐 Final Quality Review"
             )
 
-            critic_content = memory.critic_review.get(
-                "content",
-                ""
+            critic_content = (
+                memory.critic_review.get(
+                    "content",
+                    ""
+                )
             )
 
             if critic_content:
 
-                st.markdown(critic_content)
+                st.markdown(
+                    critic_content
+                )
 
             else:
 
@@ -809,9 +1084,9 @@ if st.session_state.analysis_started:
                     "No critic review was returned."
                 )
 
-        # ====================================================
+        # ----------------------------------------------------
         # Manager Summary
-        # ====================================================
+        # ----------------------------------------------------
 
         with tab_manager:
 
@@ -819,14 +1094,18 @@ if st.session_state.analysis_started:
                 "📋 Career Operations Summary"
             )
 
-            manager_content = memory.manager_summary.get(
-                "content",
-                ""
+            manager_content = (
+                memory.manager_summary.get(
+                    "content",
+                    ""
+                )
             )
 
             if manager_content:
 
-                st.markdown(manager_content)
+                st.markdown(
+                    manager_content
+                )
 
             else:
 
@@ -837,20 +1116,31 @@ if st.session_state.analysis_started:
     elif st.session_state.analysis_error:
 
         st.error(
-            "The CareerOps workflow could not complete."
+            "❌ The CareerOps workflow could not complete."
         )
 
         st.markdown(
             """
-            Check the error message above. Common causes
-            include an incorrect Gemini API key, a CrewAI
-            configuration issue, or an agent/task failure.
+            The application encountered an error while
+            running the CrewAI workflow.
+
+            The technical details below can be used to
+            identify the problem.
             """
         )
+
+        with st.expander(
+            "🔧 Show technical error"
+        ):
+
+            st.code(
+                st.session_state.analysis_error
+            )
 
     else:
 
         st.info(
-            "⏳ Career analysis has started. "
+            "⏳ Career analysis is running. "
             "Results will appear here when processing completes."
         )
+```
