@@ -12,7 +12,7 @@ from agents import (
 
 
 # ============================================================
-# 1. Job Analysis Task
+# 1. JOB ANALYSIS
 # ============================================================
 
 job_analysis_task = Task(
@@ -33,7 +33,7 @@ job_analysis_task = Task(
     7. Main responsibilities
     8. Important technologies and tools
     9. Important keywords
-    10. Any certifications or other requirements
+    10. Certifications or other requirements
 
     Clearly distinguish between required and preferred
     qualifications.
@@ -57,24 +57,24 @@ job_analysis_task = Task(
     - Other relevant requirements
     """,
 
-    agent=job_analyst_agent
+    agent=job_analyst_agent,
 )
 
 
 # ============================================================
-# 2. CV Analysis Task
+# 2. CV ANALYSIS
 # ============================================================
 
 cv_analysis_task = Task(
     description="""
     Analyze the candidate's CV and compare it against the
-    job analysis.
+    job analysis produced by the previous task.
 
     CANDIDATE CV:
     {cv_text}
 
-    JOB ANALYSIS:
-    {job_analysis}
+    The previous task has already analyzed the job description.
+    Use that task's output as the job analysis.
 
     Identify:
 
@@ -104,12 +104,15 @@ cv_analysis_task = Task(
     """,
 
     agent=cv_agent,
-    context=[job_analysis_task]
+
+    context=[
+        job_analysis_task
+    ],
 )
 
 
 # ============================================================
-# 3. Company Research Task
+# 3. COMPANY RESEARCH
 # ============================================================
 
 company_research_task = Task(
@@ -119,8 +122,8 @@ company_research_task = Task(
     JOB DESCRIPTION:
     {job_description}
 
-    Identify the organization if it is provided in the job
-    description.
+    Identify the organization if it is provided in the
+    job description.
 
     Research relevant factual information such as:
 
@@ -137,6 +140,8 @@ company_research_task = Task(
     and interview.
 
     Clearly distinguish factual information from uncertainty.
+
+    Do not invent company information.
     """,
 
     expected_output="""
@@ -151,18 +156,22 @@ company_research_task = Task(
     - Useful interview/application context
     """,
 
-    agent=research_agent
+    agent=research_agent,
+
+    context=[
+        job_analysis_task
+    ],
 )
 
 
 # ============================================================
-# 4. Application Task
+# 4. APPLICATION
 # ============================================================
 
 application_task = Task(
     description="""
-    Create tailored application materials using the available
-    career analysis.
+    Create tailored application materials using the outputs
+    produced by the previous career analysis tasks.
 
     CANDIDATE CV:
     {cv_text}
@@ -170,17 +179,16 @@ application_task = Task(
     JOB DESCRIPTION:
     {job_description}
 
-    JOB ANALYSIS:
-    {job_analysis}
-
-    CV MATCH:
-    {cv_analysis}
-
-    COMPANY RESEARCH:
-    {company_research}
-
     USER REQUEST:
     {career_request}
+
+    The previous tasks provide:
+
+    - Job analysis
+    - CV-to-job matching
+    - Company research
+
+    Use those outputs when preparing the application.
 
     Create:
 
@@ -194,8 +202,10 @@ application_task = Task(
        when appropriate
 
     All content must remain truthful to the candidate's actual
-    background. Never invent experience, qualifications,
-    achievements, or skills.
+    background.
+
+    Never invent experience, qualifications, achievements,
+    employers, education, certifications, or skills.
     """,
 
     expected_output="""
@@ -210,16 +220,17 @@ application_task = Task(
     """,
 
     agent=application_agent,
+
     context=[
         job_analysis_task,
         cv_analysis_task,
-        company_research_task
-    ]
+        company_research_task,
+    ],
 )
 
 
 # ============================================================
-# 5. Interview Preparation Task
+# 5. INTERVIEW PREPARATION
 # ============================================================
 
 interview_task = Task(
@@ -229,20 +240,20 @@ interview_task = Task(
     JOB DESCRIPTION:
     {job_description}
 
-    JOB ANALYSIS:
-    {job_analysis}
-
     CANDIDATE CV:
     {cv_text}
 
-    CV MATCH:
-    {cv_analysis}
+    USER REQUEST:
+    {career_request}
 
-    COMPANY RESEARCH:
-    {company_research}
+    The previous tasks provide:
 
-    APPLICATION MATERIALS:
-    {application_materials}
+    - Job analysis
+    - CV-to-job matching
+    - Company research
+    - Application materials
+
+    Use all of those outputs.
 
     Create:
 
@@ -256,6 +267,8 @@ interview_task = Task(
 
     The preparation should be specific to the actual role and
     candidate background.
+
+    Do not invent candidate experience.
     """,
 
     expected_output="""
@@ -271,17 +284,18 @@ interview_task = Task(
     """,
 
     agent=interview_agent,
+
     context=[
         job_analysis_task,
         cv_analysis_task,
         company_research_task,
-        application_task
-    ]
+        application_task,
+    ],
 )
 
 
 # ============================================================
-# 6. Critic / Final Review Task
+# 6. CRITIC / FINAL REVIEW
 # ============================================================
 
 critic_task = Task(
@@ -289,22 +303,15 @@ critic_task = Task(
     Perform a final quality review of the complete career
     application package.
 
-    JOB ANALYSIS:
-    {job_analysis}
+    The previous tasks provide:
 
-    CV MATCH:
-    {cv_analysis}
+    - Job analysis
+    - CV match
+    - Company research
+    - Application materials
+    - Interview preparation
 
-    COMPANY RESEARCH:
-    {company_research}
-
-    APPLICATION MATERIALS:
-    {application_materials}
-
-    INTERVIEW PREPARATION:
-    {interview_preparation}
-
-    Review the package for:
+    Review the complete package for:
 
     1. Missing job requirements
     2. Weak evidence of required skills
@@ -343,24 +350,25 @@ critic_task = Task(
     """,
 
     agent=critic_agent,
+
     context=[
         job_analysis_task,
         cv_analysis_task,
         company_research_task,
         application_task,
-        interview_task
-    ]
+        interview_task,
+    ],
 )
 
 
 # ============================================================
-# 7. Manager Task
+# 7. MANAGER SUMMARY
 # ============================================================
 
 manager_task = Task(
     description="""
-    Coordinate the career analysis workflow for the user's
-    request.
+    Coordinate and summarize the complete career analysis
+    workflow for the user's request.
 
     USER REQUEST:
     {career_request}
@@ -371,14 +379,25 @@ manager_task = Task(
     CANDIDATE CV:
     {cv_text}
 
-    Review the outputs produced by the specialized agents and
-    ensure that the final career package addresses the user's
-    request.
+    The previous tasks provide all specialized analysis.
 
-    Identify whether the workflow needs revision and explain
-    which part should be improved if necessary.
+    Review their outputs and produce a final career operations
+    summary that addresses the user's request.
+
+    Identify:
+
+    1. Main job requirements
+    2. Candidate's strongest relevant evidence
+    3. Important gaps or unsupported requirements
+    4. Application preparation status
+    5. Interview preparation status
+    6. Critic/review status
+    7. Recommended next actions
 
     Do not invent candidate information.
+
+    Do not claim that the candidate has experience or skills
+    that are not supported by the CV.
     """,
 
     expected_output="""
@@ -394,12 +413,14 @@ manager_task = Task(
     """,
 
     agent=manager_agent,
+
     context=[
         job_analysis_task,
         cv_analysis_task,
         company_research_task,
         application_task,
         interview_task,
-        critic_task
-    ]
+        critic_task,
+    ],
 )
+
