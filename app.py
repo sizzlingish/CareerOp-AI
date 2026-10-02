@@ -1,5 +1,6 @@
 import os
 import time
+import tempfile
 from datetime import datetime
 
 import streamlit as st
@@ -15,27 +16,18 @@ from agents import (
     critic_agent,
 )
 
-from tasks import (
-    job_analysis_task,
-    cv_analysis_task,
-    company_research_task,
-    application_task,
-    interview_task,
-    critic_task,
-    manager_task,
-)
-
+from tasks import TASKS
 from tools import extract_cv_text
 from memory import CareerMemory
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
     page_title="CareerOps AI",
-    page_icon="💼",
+    page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -48,58 +40,38 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        .main-title {
-            font-size: 2.7rem;
-            font-weight: 800;
-            margin-bottom: 0.2rem;
-        }
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
 
-        .subtitle {
-            font-size: 1.05rem;
-            color: #6b7280;
-            margin-bottom: 1.5rem;
-        }
+    .sub-header {
+        color: #6b7280;
+        font-size: 1.05rem;
+        margin-bottom: 1.5rem;
+    }
 
-        .section-title {
-            font-size: 1.4rem;
-            font-weight: 700;
-            margin-top: 1rem;
-            margin-bottom: 0.7rem;
-        }
+    .agent-card {
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        margin-bottom: 0.75rem;
+    }
 
-        .success-box {
-            padding: 1rem;
-            border-radius: 10px;
-            background-color: #ecfdf5;
-            border: 1px solid #a7f3d0;
-        }
+    .status-box {
+        padding: 1rem;
+        border-radius: 10px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+    }
 
-        .warning-box {
-            padding: 1rem;
-            border-radius: 10px;
-            background-color: #fffbeb;
-            border: 1px solid #fde68a;
-        }
-
-        .info-box {
-            padding: 1rem;
-            border-radius: 10px;
-            background-color: #eff6ff;
-            border: 1px solid #bfdbfe;
-        }
-
-        .metric-card {
-            padding: 1rem;
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-            background: #ffffff;
-            text-align: center;
-        }
-
-        .small-text {
-            font-size: 0.85rem;
-            color: #6b7280;
-        }
+    .result-box {
+        padding: 1.25rem;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -107,157 +79,219 @@ st.markdown(
 
 
 # ============================================================
-# SESSION STATE
+# AGENT REGISTRY
 # ============================================================
 
-DEFAULT_STATE = {
-    "cv_text": "",
-    "job_description": "",
-    "career_request": "",
-    "analysis_result": None,
-    "memory": None,
-    "analysis_complete": False,
-    "error_message": None,
+AGENTS = {
+    "Manager": manager_agent,
+    "Job Analyst": job_analyst_agent,
+    "CV Analyst": cv_agent,
+    "Research Agent": research_agent,
+    "Application Agent": application_agent,
+    "Interview Agent": interview_agent,
+    "Critic Agent": critic_agent,
 }
 
 
-for key, value in DEFAULT_STATE.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+AGENT_DESCRIPTIONS = {
+    "Manager": (
+        "Get a structured overview of your career situation, "
+        "job requirements, strengths, gaps, and next steps."
+    ),
+    "Job Analyst": (
+        "Analyze the job description, requirements, skills, "
+        "keywords, responsibilities, and qualifications."
+    ),
+    "CV Analyst": (
+        "Compare your CV against the target job and identify "
+        "matches, gaps, and CV improvement opportunities."
+    ),
+    "Research Agent": (
+        "Analyze company and opportunity information supplied "
+        "in your job description and career request."
+    ),
+    "Application Agent": (
+        "Create tailored application guidance, professional "
+        "summary, CV improvements, and cover-letter content."
+    ),
+    "Interview Agent": (
+        "Generate technical, behavioral, situational, and "
+        "job-specific interview preparation."
+    ),
+    "Critic Agent": (
+        "Review your application information and identify "
+        "weaknesses, missing evidence, gaps, and improvements."
+    ),
+}
 
 
 # ============================================================
-# HELPER FUNCTIONS
+# SESSION STATE
 # ============================================================
 
-def reset_analysis():
-    """Clear the previous analysis result."""
-    st.session_state.analysis_result = None
-    st.session_state.memory = None
-    st.session_state.analysis_complete = False
-    st.session_state.error_message = None
+if "cv_text" not in st.session_state:
+    st.session_state.cv_text = ""
+
+if "job_description" not in st.session_state:
+    st.session_state.job_description = ""
+
+if "career_request" not in st.session_state:
+    st.session_state.career_request = ""
+
+if "selected_agent" not in st.session_state:
+    st.session_state.selected_agent = "Job Analyst"
+
+if "result" not in st.session_state:
+    st.session_state.result = ""
+
+if "result_agent" not in st.session_state:
+    st.session_state.result_agent = ""
+
+if "last_run_time" not in st.session_state:
+    st.session_state.last_run_time = None
+
+
+# ============================================================
+# RESET FUNCTIONS
+# ============================================================
+
+def reset_result():
+    st.session_state.result = ""
+    st.session_state.result_agent = ""
+    st.session_state.last_run_time = None
 
 
 def reset_everything():
-    """Reset the complete application."""
-    for key, value in DEFAULT_STATE.items():
-        st.session_state[key] = value
+    st.session_state.cv_text = ""
+    st.session_state.job_description = ""
+    st.session_state.career_request = ""
+    st.session_state.selected_agent = "Job Analyst"
+    st.session_state.result = ""
+    st.session_state.result_agent = ""
+    st.session_state.last_run_time = None
 
 
-def extract_task_output(task_output):
+# ============================================================
+# GEMINI ERROR DETECTION
+# ============================================================
+
+def is_daily_quota_error(error):
     """
-    Safely convert CrewAI task output into plain text.
+    Detect Gemini daily/project/model quota exhaustion.
 
-    CrewAI versions can return slightly different output objects,
-    so this function handles the common cases.
-    """
-
-    if task_output is None:
-        return ""
-
-    # CrewAI TaskOutput commonly has .raw
-    if hasattr(task_output, "raw"):
-        raw = task_output.raw
-        if raw is not None:
-            return str(raw)
-
-    # Fallback
-    return str(task_output)
-
-
-def is_temporary_ai_error(error):
-    """
-    Detect temporary Gemini/API errors where retrying makes sense.
+    These errors should NOT be retried immediately because
+    retrying will not restore a daily quota.
     """
 
-    error_text = str(error).upper()
+    message = str(error).upper()
 
-    temporary_signals = [
-        "503",
-        "UNAVAILABLE",
-        "SERVICE UNAVAILABLE",
-        "HIGH DEMAND",
-        "SERVICEUNAVAILABLE",
-        "429",
-        "RESOURCE_EXHAUSTED",
-        "RATE LIMIT",
-        "TOO MANY REQUESTS",
-        "INTERNAL SERVER ERROR",
+    quota_patterns = [
+        "GENERATEREQUESTSPERDAYPERPROJECTPERMODEL-FREETIER",
+        "EXCEEDED YOUR CURRENT QUOTA",
+        "QUOTA EXCEEDED",
+        "QUOTA_EXCEEDED",
+        "PERDAYPERPROJECTPERMODEL",
     ]
 
-    return any(signal in error_text for signal in temporary_signals)
+    return any(pattern in message for pattern in quota_patterns)
 
+
+def is_retryable_ai_error(error):
+    """
+    Return True only for temporary errors that may recover
+    after a short delay.
+    """
+
+    if is_daily_quota_error(error):
+        return False
+
+    message = str(error).upper()
+
+    retryable_patterns = [
+        "503",
+        "SERVICE_UNAVAILABLE",
+        "UNAVAILABLE",
+        "429",
+        "RESOURCE_EXHAUSTED",
+        "RATE_LIMIT",
+        "TOO MANY REQUESTS",
+        "500",
+        "502",
+        "504",
+        "INTERNAL SERVER ERROR",
+        "BAD GATEWAY",
+        "GATEWAY TIMEOUT",
+    ]
+
+    return any(pattern in message for pattern in retryable_patterns)
+
+
+# ============================================================
+# CREW EXECUTION WITH RETRY
+# ============================================================
 
 def kickoff_with_retry(crew, inputs, max_attempts=4):
     """
-    Run CrewAI with retry handling for temporary Gemini failures.
+    Run the selected agent crew.
 
-    Delays:
-        attempt 1 -> immediate
-        attempt 2 -> 5 seconds
-        attempt 3 -> 15 seconds
-        attempt 4 -> 30 seconds
+    Only temporary API failures are retried.
+
+    Daily quota exhaustion is immediately returned to the UI.
     """
 
     delays = [5, 15, 30]
 
     for attempt in range(max_attempts):
-
         try:
             return crew.kickoff(inputs=inputs)
 
         except Exception as error:
 
-            # Don't retry permanent errors.
-            if not is_temporary_ai_error(error):
-                raise
+            # Daily quota exhaustion should never be repeatedly retried.
+            if is_daily_quota_error(error):
+                raise error
 
-            # No attempts remaining.
-            if attempt >= max_attempts - 1:
-                raise
+            # Non-temporary errors should immediately stop.
+            if not is_retryable_ai_error(error):
+                raise error
 
-            delay = delays[attempt]
+            # Last attempt
+            if attempt == max_attempts - 1:
+                raise error
+
+            delay = delays[min(attempt, len(delays) - 1)]
 
             st.warning(
-                f"Gemini is temporarily busy or rate-limited. "
-                f"Retrying in {delay} seconds "
-                f"(attempt {attempt + 2}/{max_attempts})..."
+                f"Temporary AI service error. "
+                f"Retrying in {delay} seconds..."
             )
 
             time.sleep(delay)
 
-    raise RuntimeError(
-        "The AI service could not be reached after multiple attempts."
-    )
 
+# ============================================================
+# CREATE SINGLE-AGENT CREW
+# ============================================================
 
-def create_crew():
+def create_single_agent_crew(agent_name):
     """
-    Create the CareerOps Crew.
+    Create a Crew containing exactly ONE agent and ONE task.
 
-    The process is sequential because later tasks depend
-    on outputs from earlier tasks.
+    No other agent is included in the Crew.
     """
+
+    if agent_name not in AGENTS:
+        raise ValueError(f"Unknown agent: {agent_name}")
+
+    if agent_name not in TASKS:
+        raise ValueError(f"No task configured for: {agent_name}")
+
+    selected_agent = AGENTS[agent_name]
+    selected_task = TASKS[agent_name]
 
     crew = Crew(
-        agents=[
-            job_analyst_agent,
-            cv_agent,
-            research_agent,
-            application_agent,
-            interview_agent,
-            critic_agent,
-            manager_agent,
-        ],
-        tasks=[
-            job_analysis_task,
-            cv_analysis_task,
-            company_research_task,
-            application_task,
-            interview_task,
-            critic_task,
-            manager_task,
-        ],
+        agents=[selected_agent],
+        tasks=[selected_task],
         process=Process.sequential,
         verbose=True,
     )
@@ -265,42 +299,21 @@ def create_crew():
     return crew
 
 
-def run_career_analysis(cv_text, job_description, career_request):
+# ============================================================
+# RUN SELECTED AGENT
+# ============================================================
+
+def run_selected_agent(
+    agent_name,
+    cv_text,
+    job_description,
+    career_request,
+):
     """
-    Run the complete CareerOps workflow.
+    Execute exactly one selected agent.
     """
 
-    # --------------------------------------------------------
-    # Create memory
-    # --------------------------------------------------------
-
-    memory = CareerMemory()
-
-    try:
-        memory.set_cv(cv_text)
-    except Exception:
-        pass
-
-    try:
-        memory.set_job(job_description)
-    except Exception:
-        pass
-
-    # --------------------------------------------------------
-    # Create crew
-    # --------------------------------------------------------
-
-    crew = create_crew()
-
-    # --------------------------------------------------------
-    # IMPORTANT:
-    #
-    # These are the ONLY direct inputs used by our corrected
-    # tasks.py.
-    #
-    # Do NOT add job_analysis, cv_analysis, etc. here.
-    # Those are provided through CrewAI task context.
-    # --------------------------------------------------------
+    crew = create_single_agent_crew(agent_name)
 
     inputs = {
         "cv_text": cv_text,
@@ -309,139 +322,99 @@ def run_career_analysis(cv_text, job_description, career_request):
     }
 
     # --------------------------------------------------------
-    # Run CrewAI with retry handling
+    # Optional career memory
+    # --------------------------------------------------------
+
+    memory = None
+
+    try:
+        memory = CareerMemory()
+    except Exception:
+        memory = None
+
+    # Store current information if the memory class supports it.
+    if memory is not None:
+
+        try:
+            if hasattr(memory, "set_cv"):
+                memory.set_cv(cv_text)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(memory, "set_job_description"):
+                memory.set_job_description(job_description)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(memory, "set_career_request"):
+                memory.set_career_request(career_request)
+        except Exception:
+            pass
+
+    # --------------------------------------------------------
+    # Execute selected agent
     # --------------------------------------------------------
 
     result = kickoff_with_retry(
-        crew,
-        inputs,
-        max_attempts=4,
+        crew=crew,
+        inputs=inputs,
     )
 
-    # --------------------------------------------------------
-    # Extract task outputs
-    # --------------------------------------------------------
-
-    outputs = {}
-
-    task_names = [
-        "job_analysis",
-        "cv_analysis",
-        "company_research",
-        "application_materials",
-        "interview_preparation",
-        "critic_review",
-        "manager_summary",
-    ]
-
-    for index, task_name in enumerate(task_names):
-
-        try:
-            if index < len(crew.tasks):
-                task_output = crew.tasks[index].output
-                outputs[task_name] = extract_task_output(task_output)
-            else:
-                outputs[task_name] = ""
-
-        except Exception:
-            outputs[task_name] = ""
-
-    # --------------------------------------------------------
-    # Fallback:
-    # If task outputs aren't available, use final result.
-    # --------------------------------------------------------
-
-    if not any(outputs.values()):
-        outputs["manager_summary"] = extract_task_output(result)
-
-    # --------------------------------------------------------
-    # Store results in memory when supported
-    # --------------------------------------------------------
-
-    memory_methods = {
-        "job_analysis": "set_job_analysis",
-        "cv_analysis": "set_cv_analysis",
-        "company_research": "set_company_research",
-        "application_materials": "set_application_materials",
-        "interview_preparation": "set_interview_preparation",
-        "critic_review": "set_critic_review",
-        "manager_summary": "set_manager_summary",
-    }
-
-    for result_key, method_name in memory_methods.items():
-
-        value = outputs.get(result_key, "")
-
-        if not value:
-            continue
-
-        try:
-            method = getattr(memory, method_name, None)
-
-            if method:
-                method(value)
-
-        except Exception:
-            # Memory should never crash the main workflow.
-            pass
-
-    return outputs, memory
+    return result
 
 
-def create_report(outputs, job_description, career_request):
+# ============================================================
+# EXTRACT RESULT TEXT
+# ============================================================
+
+def extract_result_text(result):
     """
-    Build a plain-text report that users can download.
+    Convert CrewAI output into normal text.
     """
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if result is None:
+        return ""
 
-    report_parts = [
-        "CAREEROPS AI - CAREER ANALYSIS REPORT",
-        "=" * 60,
-        "",
-        f"Generated: {timestamp}",
-        "",
-        "CAREER REQUEST",
-        "-" * 60,
-        career_request,
-        "",
-        "JOB DESCRIPTION",
-        "-" * 60,
-        job_description,
-        "",
-        "JOB ANALYSIS",
-        "-" * 60,
-        outputs.get("job_analysis", ""),
-        "",
-        "CV ANALYSIS",
-        "-" * 60,
-        outputs.get("cv_analysis", ""),
-        "",
-        "COMPANY RESEARCH",
-        "-" * 60,
-        outputs.get("company_research", ""),
-        "",
-        "APPLICATION MATERIALS",
-        "-" * 60,
-        outputs.get("application_materials", ""),
-        "",
-        "INTERVIEW PREPARATION",
-        "-" * 60,
-        outputs.get("interview_preparation", ""),
-        "",
-        "CRITIC REVIEW",
-        "-" * 60,
-        outputs.get("critic_review", ""),
-        "",
-        "MANAGER SUMMARY",
-        "-" * 60,
-        outputs.get("manager_summary", ""),
-        "",
-        "=" * 60,
-        "Generated by CareerOps AI",
-    ]
+    # CrewAI CrewOutput
+    if hasattr(result, "raw"):
+        raw = result.raw
 
-    return "\n".join(report_parts)
+        if raw is not None:
+            return str(raw)
+
+    # Generic object
+    return str(result)
+
+
+# ============================================================
+# QUOTA ERROR DISPLAY
+# ============================================================
+
+def show_quota_error(error):
+    st.error(
+        "Gemini API quota has been exhausted."
+    )
+
+    st.markdown(
+        """
+        Your Gemini project has reached its current API quota.
+
+        This is different from a temporary API error, so the app
+        will **not keep retrying automatically**.
+
+        You can:
+
+        - Wait for the quota to reset
+        - Check your Gemini API usage
+        - Use a different Gemini project/API key
+        - Upgrade the applicable Gemini API plan
+        """
+    )
+
+    with st.expander("Technical details"):
+        st.code(str(error))
 
 
 # ============================================================
@@ -450,44 +423,59 @@ def create_report(outputs, job_description, career_request):
 
 with st.sidebar:
 
-    st.markdown("## 💼 CareerOps AI")
+    st.header("⚙️ CareerOps AI")
 
-    st.markdown(
-        """
-        **AI-powered career operations assistant**
+    st.markdown("---")
 
-        Your workflow:
+    st.subheader("Agent")
 
-        1. 📄 Add your CV
-        2. 🎯 Add the job description
-        3. 🤖 Analyze job fit
-        4. 🏢 Research the company
-        5. ✍️ Prepare application materials
-        6. 🎤 Prepare for interviews
-        7. 🔍 Review everything
-        """
+    selected_agent = st.selectbox(
+        "Choose one agent",
+        options=list(AGENTS.keys()),
+        index=list(AGENTS.keys()).index(
+            st.session_state.selected_agent
+        ),
     )
 
-    st.divider()
+    st.session_state.selected_agent = selected_agent
 
-    st.markdown("### System Status")
+    st.caption(
+        AGENT_DESCRIPTIONS[selected_agent]
+    )
 
-    gemini_key_exists = bool(
+    st.markdown("---")
+
+    st.subheader("System Status")
+
+    try:
+        secret_key_exists = bool(
+            st.secrets.get("GEMINI_API_KEY")
+        )
+    except Exception:
+        secret_key_exists = False
+
+    environment_key_exists = bool(
         os.getenv("GEMINI_API_KEY")
         or os.getenv("GOOGLE_API_KEY")
+    )
+
+    gemini_key_exists = (
+        secret_key_exists or environment_key_exists
     )
 
     if gemini_key_exists:
         st.success("Gemini API key detected")
     else:
-        st.warning(
-            "No Gemini API key detected in environment variables."
-        )
+        st.error("Gemini API key not detected")
 
-    st.divider()
+    st.info(
+        "Only the selected agent is executed when you click Run."
+    )
+
+    st.markdown("---")
 
     if st.button(
-        "🗑️ Reset Application",
+        "🗑️ Reset Everything",
         use_container_width=True,
     ):
         reset_everything()
@@ -499,732 +487,313 @@ with st.sidebar:
 # ============================================================
 
 st.markdown(
-    '<div class="main-title">💼 CareerOps AI</div>',
+    '<div class="main-header">🎯 CareerOps AI</div>',
     unsafe_allow_html=True,
 )
 
 st.markdown(
-    '<div class="subtitle">'
-    "Your AI-powered career operations assistant"
+    '<div class="sub-header">'
+    "AI-powered career operations assistant"
     "</div>",
     unsafe_allow_html=True,
 )
 
 
 # ============================================================
-# INPUT SECTION
+# CURRENT AGENT DISPLAY
 # ============================================================
 
 st.markdown(
-    '<div class="section-title">1. Your CV</div>',
+    f"""
+    <div class="agent-card">
+        <strong>Selected Agent:</strong> {selected_agent}<br>
+        <span>{AGENT_DESCRIPTIONS[selected_agent]}</span>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
-cv_input_method = st.radio(
-    "How would you like to provide your CV?",
-    options=[
-        "Upload CV",
-        "Paste CV text",
+
+# ============================================================
+# CV SECTION
+# ============================================================
+
+st.header("📄 Candidate CV")
+
+cv_upload = st.file_uploader(
+    "Upload your CV",
+    type=[
+        "pdf",
+        "docx",
+        "txt",
     ],
-    horizontal=True,
+    help="Upload a PDF, DOCX, or TXT CV.",
 )
 
 
-# ------------------------------------------------------------
-# UPLOAD CV
-# ------------------------------------------------------------
+if cv_upload is not None:
 
-if cv_input_method == "Upload CV":
+    try:
 
-    uploaded_file = st.file_uploader(
-        "Upload your CV",
-        type=["pdf", "txt"],
-        help="Supported formats: PDF and TXT",
-    )
+        file_extension = (
+            os.path.splitext(cv_upload.name)[1]
+            .lower()
+        )
 
-    if uploaded_file is not None:
+        if file_extension == ".txt":
 
-        file_name = uploaded_file.name.lower()
-
-        try:
-
-            # TXT
-            if file_name.endswith(".txt"):
-
-                cv_text = uploaded_file.read().decode(
-                    "utf-8",
-                    errors="ignore",
-                )
-
-            # PDF
-            else:
-
-                # Write uploaded file to a temporary file
-                with tempfile.NamedTemporaryFile(
-                    delete=False,
-                    suffix=".pdf",
-                ) as temp_file:
-
-                    temp_file.write(
-                        uploaded_file.getvalue()
-                    )
-
-                    temp_path = temp_file.name
-
-                try:
-                    cv_text = extract_cv_text(temp_path)
-
-                finally:
-
-                    try:
-                        os.remove(temp_path)
-                    except Exception:
-                        pass
-
-            st.session_state.cv_text = cv_text
-
-            if cv_text.strip():
-
-                st.success(
-                    f"CV loaded successfully: {uploaded_file.name}"
-                )
-
-                with st.expander(
-                    "👀 Preview CV text",
-                    expanded=False,
-                ):
-
-                    st.text_area(
-                        "Extracted CV",
-                        value=cv_text,
-                        height=250,
-                        disabled=True,
-                        label_visibility="collapsed",
-                    )
-
-            else:
-
-                st.error(
-                    "The CV was uploaded, but no text could be extracted."
-                )
-
-        except Exception as error:
-
-            st.error(
-                "I couldn't read this CV file."
+            st.session_state.cv_text = (
+                cv_upload.read()
+                .decode("utf-8", errors="ignore")
             )
 
-            with st.expander(
-                "Technical details"
-            ):
-                st.exception(error)
+        else:
+
+            # Create a temporary file for the existing
+            # extract_cv_text() utility.
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=file_extension,
+            ) as temp_file:
+
+                temp_file.write(
+                    cv_upload.getbuffer()
+                )
+
+                temp_path = temp_file.name
+
+            try:
+
+                extracted_text = extract_cv_text(
+                    temp_path
+                )
+
+                if extracted_text:
+                    st.session_state.cv_text = (
+                        extracted_text
+                    )
+
+            finally:
+
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+        st.success(
+            f"CV loaded: {cv_upload.name}"
+        )
+
+    except Exception as error:
+
+        st.error(
+            f"Could not read the uploaded CV: {error}"
+        )
 
 
-# ------------------------------------------------------------
-# PASTE CV
-# ------------------------------------------------------------
+cv_text_input = st.text_area(
+    "Or paste your CV here",
+    value=st.session_state.cv_text,
+    height=300,
+    placeholder="Paste your CV text here...",
+)
 
-else:
-
-    pasted_cv = st.text_area(
-        "Paste your CV here",
-        value=st.session_state.cv_text,
-        height=350,
-        placeholder=(
-            "Paste your complete CV here...\n\n"
-            "Example:\n"
-            "John Doe\n"
-            "Senior Data Scientist\n"
-            "john@example.com\n\n"
-            "Experience...\n"
-            "Education...\n"
-            "Skills..."
-        ),
-    )
-
-    st.session_state.cv_text = pasted_cv
+st.session_state.cv_text = cv_text_input
 
 
 # ============================================================
 # JOB DESCRIPTION
 # ============================================================
 
-st.markdown(
-    '<div class="section-title">2. Target Job</div>',
-    unsafe_allow_html=True,
-)
+st.header("💼 Job Description")
 
-job_description = st.text_area(
-    "Paste the job description",
+job_description_input = st.text_area(
+    "Paste the target job description",
     value=st.session_state.job_description,
     height=300,
-    placeholder=(
-        "Paste the complete job description here...\n\n"
-        "Include responsibilities, qualifications, "
-        "requirements, skills, location, and other details."
-    ),
+    placeholder="Paste the complete job description here...",
 )
 
-st.session_state.job_description = job_description
+st.session_state.job_description = job_description_input
 
 
 # ============================================================
 # CAREER REQUEST
 # ============================================================
 
-st.markdown(
-    '<div class="section-title">3. What do you want CareerOps AI to do?</div>',
-    unsafe_allow_html=True,
-)
+st.header("🎯 Career Request")
 
-career_request = st.text_area(
-    "Career request",
+career_request_input = st.text_area(
+    "What do you want CareerOps AI to help you with?",
     value=st.session_state.career_request,
-    height=120,
+    height=180,
     placeholder=(
-        "Example: Help me apply for this job. "
-        "Analyze my fit, identify gaps, create an application strategy, "
-        "prepare interview questions, and suggest improvements."
+        "Example:\n"
+        "Analyze my fit for this position and tell me "
+        "what I should improve before applying."
     ),
 )
 
-st.session_state.career_request = career_request
+st.session_state.career_request = career_request_input
 
 
 # ============================================================
 # INPUT VALIDATION
 # ============================================================
 
-st.markdown(
-    '<div class="section-title">Input Check</div>',
-    unsafe_allow_html=True,
-)
+def validate_inputs():
+    errors = []
 
-cv_ready = bool(
-    st.session_state.cv_text
-    and st.session_state.cv_text.strip()
-)
+    if not st.session_state.cv_text.strip():
+        errors.append("Please provide your CV.")
 
-job_ready = bool(
-    st.session_state.job_description
-    and st.session_state.job_description.strip()
-)
+    if not st.session_state.job_description.strip():
+        errors.append(
+            "Please provide the job description."
+        )
 
-request_ready = bool(
-    st.session_state.career_request
-    and st.session_state.career_request.strip()
-)
+    if not st.session_state.career_request.strip():
+        errors.append(
+            "Please describe what you want the agent to do."
+        )
 
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-
-    if cv_ready:
-        st.success("✅ CV ready")
-    else:
-        st.warning("⚠️ CV missing")
-
-
-with col2:
-
-    if job_ready:
-        st.success("✅ Job description ready")
-    else:
-        st.warning("⚠️ Job description missing")
-
-
-with col3:
-
-    if request_ready:
-        st.success("✅ Career request ready")
-    else:
-        st.warning("⚠️ Career request missing")
+    return errors
 
 
 # ============================================================
-# ANALYZE BUTTON
+# RUN BUTTON
 # ============================================================
 
-st.divider()
+st.markdown("---")
 
-analyze_button = st.button(
-    "🚀 Analyze Job & Build Application Strategy",
+run_button = st.button(
+    f"🚀 Run {selected_agent}",
     type="primary",
     use_container_width=True,
 )
 
 
-if analyze_button:
+if run_button:
 
-    # --------------------------------------------------------
-    # Validate inputs
-    # --------------------------------------------------------
+    validation_errors = validate_inputs()
 
-    if not cv_ready:
+    if validation_errors:
 
-        st.error(
-            "Please upload or paste your CV before starting."
-        )
-        st.stop()
+        for error in validation_errors:
+            st.warning(error)
 
-    if not job_ready:
+    else:
 
-        st.error(
-            "Please provide the job description before starting."
-        )
-        st.stop()
+        reset_result()
 
-    if not request_ready:
+        st.session_state.selected_agent = selected_agent
 
-        st.error(
-            "Please tell CareerOps AI what you want it to do."
-        )
-        st.stop()
-
-    # --------------------------------------------------------
-    # Reset old results
-    # --------------------------------------------------------
-
-    reset_analysis()
-
-    # --------------------------------------------------------
-    # Progress UI
-    # --------------------------------------------------------
-
-    progress_bar = st.progress(0)
-
-    status_text = st.empty()
-
-    status_text.info(
-        "🚀 Starting CareerOps AI..."
-    )
-
-    try:
-
-        # ----------------------------------------------------
-        # Stage 1
-        # ----------------------------------------------------
-
-        progress_bar.progress(5)
-
-        status_text.info(
-            "🔎 Preparing job, CV, and career request..."
-        )
-
-        time.sleep(0.5)
-
-        # ----------------------------------------------------
-        # Stage 2
-        # ----------------------------------------------------
-
-        progress_bar.progress(10)
-
-        status_text.info(
-            "🤖 Running the CareerOps AI team..."
-        )
-
-        # ----------------------------------------------------
-        # IMPORTANT:
-        #
-        # This is where all CrewAI tasks execute.
-        # The actual task chain is controlled by tasks.py.
-        # ----------------------------------------------------
-
-        outputs, memory = run_career_analysis(
-            cv_text=st.session_state.cv_text,
-            job_description=st.session_state.job_description,
-            career_request=st.session_state.career_request,
-        )
-
-        # ----------------------------------------------------
-        # Complete
-        # ----------------------------------------------------
-
-        progress_bar.progress(100)
-
-        status_text.success(
-            "✅ Career analysis completed successfully."
-        )
-
-        st.session_state.analysis_result = outputs
-        st.session_state.memory = memory
-        st.session_state.analysis_complete = True
-
-    except Exception as error:
-
-        progress_bar.empty()
-
-        status_text.error(
-            "❌ Career analysis failed."
-        )
-
-        st.session_state.error_message = str(error)
-
-        error_text = str(error)
-
-        # ----------------------------------------------------
-        # Friendly Gemini 503 message
-        # ----------------------------------------------------
-
-        if is_temporary_ai_error(error):
-
-            st.warning(
-                """
-                Gemini is temporarily unavailable or overloaded.
-
-                This is usually a temporary API/service issue rather
-                than a problem with your CV or job description.
-
-                The application already retried automatically.
-                Please wait a little and try again.
-                """
-            )
-
-        else:
-
-            st.error(
-                "Something went wrong while running the AI workflow."
-            )
-
-        # ----------------------------------------------------
-        # Technical details
-        # ----------------------------------------------------
-
-        with st.expander(
-            "🔧 Technical error details"
+        with st.spinner(
+            f"Running {selected_agent}..."
         ):
 
-            st.code(
-                error_text,
-                language="text",
-            )
+            try:
 
-            st.caption(
-                "If you are debugging the application, "
-                "the full traceback is shown below."
-            )
+                result = run_selected_agent(
+                    agent_name=selected_agent,
+                    cv_text=st.session_state.cv_text,
+                    job_description=(
+                        st.session_state.job_description
+                    ),
+                    career_request=(
+                        st.session_state.career_request
+                    ),
+                )
 
-            st.exception(error)
+                result_text = extract_result_text(
+                    result
+                )
+
+                st.session_state.result = result_text
+                st.session_state.result_agent = (
+                    selected_agent
+                )
+
+                st.session_state.last_run_time = (
+                    datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                )
+
+                st.success(
+                    f"{selected_agent} completed successfully."
+                )
+
+            except Exception as error:
+
+                if is_daily_quota_error(error):
+
+                    show_quota_error(error)
+
+                else:
+
+                    st.error(
+                        "The selected agent could not complete "
+                        "the request."
+                    )
+
+                    with st.expander(
+                        "Technical error details"
+                    ):
+                        st.code(str(error))
 
 
 # ============================================================
 # RESULTS
 # ============================================================
 
-if st.session_state.analysis_complete:
+if st.session_state.result:
 
-    outputs = st.session_state.analysis_result
+    st.markdown("---")
 
-    st.divider()
+    st.header(
+        f"📊 {st.session_state.result_agent} Result"
+    )
+
+    if st.session_state.last_run_time:
+
+        st.caption(
+            f"Completed: "
+            f"{st.session_state.last_run_time}"
+        )
 
     st.markdown(
-        '<div class="section-title">📊 CareerOps Analysis</div>',
+        '<div class="result-box">',
         unsafe_allow_html=True,
     )
 
-    st.success(
-        "Your career analysis has been completed."
+    st.markdown(
+        st.session_state.result
+    )
+
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True,
     )
 
     # --------------------------------------------------------
-    # Summary metrics
+    # Download
     # --------------------------------------------------------
 
-    result_items = [
-        (
-            "Job Analysis",
-            outputs.get("job_analysis", ""),
-        ),
-        (
-            "CV Analysis",
-            outputs.get("cv_analysis", ""),
-        ),
-        (
-            "Company Research",
-            outputs.get("company_research", ""),
-        ),
-        (
-            "Application",
-            outputs.get("application_materials", ""),
-        ),
-        (
-            "Interview Prep",
-            outputs.get("interview_preparation", ""),
-        ),
-        (
-            "Review",
-            outputs.get("critic_review", ""),
-        ),
-    ]
-
-    completed_count = sum(
-        1
-        for _, value in result_items
-        if value and value.strip()
+    safe_agent_name = (
+        st.session_state.result_agent
+        .lower()
+        .replace(" ", "_")
     )
 
-    metric1, metric2, metric3 = st.columns(3)
-
-    with metric1:
-
-        st.metric(
-            "Workflow",
-            "Complete",
-        )
-
-    with metric2:
-
-        st.metric(
-            "AI Tasks",
-            f"{completed_count}/6",
-        )
-
-    with metric3:
-
-        st.metric(
-            "Status",
-            "Ready",
-        )
-
-    st.divider()
-
-    # --------------------------------------------------------
-    # Result tabs
-    # --------------------------------------------------------
-
-    tabs = st.tabs(
-        [
-            "🎯 Job Analysis",
-            "📄 CV Analysis",
-            "🏢 Company Research",
-            "✍️ Application",
-            "🎤 Interview Prep",
-            "🔍 Review",
-            "👔 Manager Summary",
-        ]
-    )
-
-    # --------------------------------------------------------
-    # Job Analysis
-    # --------------------------------------------------------
-
-    with tabs[0]:
-
-        st.subheader(
-            "🎯 Job Analysis"
-        )
-
-        content = outputs.get(
-            "job_analysis",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No job analysis output was returned."
-            )
-
-    # --------------------------------------------------------
-    # CV Analysis
-    # --------------------------------------------------------
-
-    with tabs[1]:
-
-        st.subheader(
-            "📄 CV Analysis"
-        )
-
-        content = outputs.get(
-            "cv_analysis",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No CV analysis output was returned."
-            )
-
-    # --------------------------------------------------------
-    # Company Research
-    # --------------------------------------------------------
-
-    with tabs[2]:
-
-        st.subheader(
-            "🏢 Company Research"
-        )
-
-        content = outputs.get(
-            "company_research",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No company research output was returned."
-            )
-
-    # --------------------------------------------------------
-    # Application Materials
-    # --------------------------------------------------------
-
-    with tabs[3]:
-
-        st.subheader(
-            "✍️ Application Materials"
-        )
-
-        content = outputs.get(
-            "application_materials",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No application material output was returned."
-            )
-
-    # --------------------------------------------------------
-    # Interview Preparation
-    # --------------------------------------------------------
-
-    with tabs[4]:
-
-        st.subheader(
-            "🎤 Interview Preparation"
-        )
-
-        content = outputs.get(
-            "interview_preparation",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No interview preparation output was returned."
-            )
-
-    # --------------------------------------------------------
-    # Critic Review
-    # --------------------------------------------------------
-
-    with tabs[5]:
-
-        st.subheader(
-            "🔍 Final Review"
-        )
-
-        content = outputs.get(
-            "critic_review",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No review output was returned."
-            )
-
-    # --------------------------------------------------------
-    # Manager Summary
-    # --------------------------------------------------------
-
-    with tabs[6]:
-
-        st.subheader(
-            "👔 Manager Summary"
-        )
-
-        content = outputs.get(
-            "manager_summary",
-            "",
-        )
-
-        if content:
-            st.markdown(content)
-        else:
-            st.info(
-                "No manager summary output was returned."
-            )
-
-    # ========================================================
-    # DOWNLOAD REPORT
-    # ========================================================
-
-    st.divider()
-
-    st.subheader(
-        "📥 Export Your Career Analysis"
-    )
-
-    report = create_report(
-        outputs=outputs,
-        job_description=st.session_state.job_description,
-        career_request=st.session_state.career_request,
+    file_name = (
+        f"careerops_{safe_agent_name}_report.txt"
     )
 
     st.download_button(
-        label="📄 Download Full CareerOps Report",
-        data=report,
-        file_name="careerops_analysis_report.txt",
+        label="⬇️ Download Result",
+        data=st.session_state.result,
+        file_name=file_name,
         mime="text/plain",
         use_container_width=True,
     )
-
-
-# ============================================================
-# EMPTY STATE
-# ============================================================
-
-elif not analyze_button:
-
-    st.divider()
-
-    st.markdown(
-        """
-        ### 👋 Ready to get started?
-
-        Provide your **CV**, the **job description**, and tell
-        CareerOps AI what you want help with.
-
-        CareerOps will then work through the application workflow:
-        """
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.markdown(
-            "**1. 🎯 Fit**\n\n"
-            "Analyze the job and compare it with your CV."
-        )
-
-    with col2:
-        st.markdown(
-            "**2. 🏢 Research**\n\n"
-            "Analyze the company and role context."
-        )
-
-    with col3:
-        st.markdown(
-            "**3. ✍️ Apply**\n\n"
-            "Prepare application materials."
-        )
-
-    with col4:
-        st.markdown(
-            "**4. 🎤 Interview**\n\n"
-            "Prepare for the interview and review."
-        )
