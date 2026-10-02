@@ -1,20 +1,9 @@
 import os
-
 import streamlit as st
 from crewai import Agent, LLM
 
 
-# ============================================================
-# Gemini Configuration
-# ============================================================
-
 def get_gemini_api_key():
-    """
-    Get the Gemini API key from Streamlit Secrets when running
-    on Streamlit Cloud, or from an environment variable when
-    running elsewhere.
-    """
-
     try:
         return st.secrets["GEMINI_API_KEY"]
     except Exception:
@@ -23,7 +12,6 @@ def get_gemini_api_key():
 
 GEMINI_API_KEY = get_gemini_api_key()
 
-
 if not GEMINI_API_KEY:
     raise ValueError(
         "GEMINI_API_KEY is not configured. "
@@ -31,49 +19,17 @@ if not GEMINI_API_KEY:
     )
 
 
-# ============================================================
-# Gemini Model Configuration
-# ============================================================
-
-# Can be changed from Streamlit Secrets/environment variables
-# without editing this file.
-#
-# Example:
-# GEMINI_MODEL=gemini-3.7-flash
-#
-# Current default:
-# gemini-3.8-flash
-
 GEMINI_MODEL = (
     os.getenv("GEMINI_MODEL")
     or st.secrets.get("GEMINI_MODEL", "gemini-3.8-flash")
 )
 
 
-# ============================================================
-# Shared Gemini LLM
-# ============================================================
-
-# IMPORTANT:
-#
-# Gemini 3.8 Flash currently does not use the old temperature,
-# top_p, or top_k parameters.
-#
-# Therefore we intentionally do NOT pass:
-#
-#     temperature=0.2
-#
-# here.
-
 gemini_llm = LLM(
     model=f"gemini/{GEMINI_MODEL}",
     api_key=GEMINI_API_KEY,
 )
 
-
-# ============================================================
-# Common Agent Settings
-# ============================================================
 
 COMMON_AGENT_SETTINGS = {
     "llm": gemini_llm,
@@ -82,45 +38,33 @@ COMMON_AGENT_SETTINGS = {
 
 
 # ============================================================
-# 1. Manager Agent
+# 1. MANAGER AGENT
 # ============================================================
 
 manager_agent = Agent(
     role="Career Operations Manager",
-
     goal=(
-        "Understand the user's career request and ensure that "
-        "the complete career analysis addresses the user's goals. "
-        "Review the outputs from the specialized career agents "
-        "and produce a concise final manager-level summary."
+        "Understand the user's career request and provide a "
+        "clear, structured career analysis based only on the "
+        "information provided by the user."
     ),
-
     backstory=(
         "You are an experienced career operations manager. "
-        "You coordinate a structured career workflow involving "
-        "job analysis, CV analysis, company research, application "
-        "writing, interview preparation, and quality review. "
-        "You focus on consistency, completeness, and actionable "
-        "career guidance."
+        "You provide practical, structured, and truthful career "
+        "guidance. You never invent information about the "
+        "candidate, job, company, or career history."
     ),
-
-    llm=gemini_llm,
-    verbose=True,
-
-    # The Crew already controls the workflow sequentially.
-    # Keeping delegation disabled prevents unnecessary extra
-    # agent calls.
+    **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
 # ============================================================
-# 2. Job Analyst Agent
+# 2. JOB ANALYST AGENT
 # ============================================================
 
 job_analyst_agent = Agent(
     role="Job Description Analyst",
-
     goal=(
         "Analyze the target job description and identify the "
         "important requirements, responsibilities, qualifications, "
@@ -128,7 +72,6 @@ job_analyst_agent = Agent(
         "education requirements, keywords, and preferred "
         "qualifications."
     ),
-
     backstory=(
         "You are an expert recruitment and job-description "
         "analyst. You understand how employers describe roles "
@@ -138,26 +81,23 @@ job_analyst_agent = Agent(
         "You do not invent requirements that are not supported "
         "by the job description."
     ),
-
     **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
 # ============================================================
-# 3. CV Agent
+# 3. CV ANALYST AGENT
 # ============================================================
 
 cv_agent = Agent(
     role="CV and Candidate Matching Specialist",
-
     goal=(
         "Analyze the candidate's CV and compare the candidate's "
         "skills, education, projects, work experience, "
         "achievements, certifications, and technical background "
         "against the requirements of the target job."
     ),
-
     backstory=(
         "You are an experienced CV reviewer and recruitment "
         "specialist. You identify concrete evidence in a "
@@ -167,53 +107,48 @@ cv_agent = Agent(
         "You never invent qualifications, experience, "
         "achievements, or skills."
     ),
-
     **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
 # ============================================================
-# 4. Research Agent
+# 4. COMPANY RESEARCH AGENT
 # ============================================================
 
 research_agent = Agent(
     role="Company and Opportunity Research Specialist",
-
     goal=(
-        "Analyze the organization and job opportunity and "
-        "provide useful factual context about the company, "
-        "its products or services, industry, role context, "
-        "and information that can improve the candidate's "
-        "application and interview preparation."
+        "Analyze the organization and job opportunity using "
+        "the information supplied by the user. Provide useful "
+        "factual context about the company, products or services, "
+        "industry, role context, and information that can improve "
+        "the candidate's application and interview preparation."
     ),
-
     backstory=(
         "You are a professional company research analyst. "
         "You focus on reliable factual information and clearly "
-        "distinguish verified information from assumptions. "
-        "You connect company and role information to the "
-        "candidate's application strategy."
+        "distinguish between information explicitly provided by "
+        "the user and reasonable observations. You never claim "
+        "to have performed live web research unless a web "
+        "research tool is actually available."
     ),
-
     **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
 # ============================================================
-# 5. Application Agent
+# 5. APPLICATION AGENT
 # ============================================================
 
 application_agent = Agent(
     role="Professional Application Specialist",
-
     goal=(
         "Create tailored, professional, and truthful application "
-        "materials using the job analysis, candidate CV analysis, "
-        "company research, and user's career request."
+        "materials using the job description, candidate CV, "
+        "company information, and user's career request."
     ),
-
     backstory=(
         "You are an expert professional application writer. "
         "You create targeted professional summaries, CV "
@@ -223,26 +158,23 @@ application_agent = Agent(
         "inventing experience, skills, achievements, "
         "qualifications, or employment history."
     ),
-
     **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
 # ============================================================
-# 6. Interview Agent
+# 6. INTERVIEW AGENT
 # ============================================================
 
 interview_agent = Agent(
     role="Interview Preparation Coach",
-
     goal=(
         "Prepare the candidate for the target interview by "
         "generating job-specific technical, behavioral, "
         "situational, and role-specific questions together "
         "with practical preparation guidance."
     ),
-
     backstory=(
         "You are an experienced interview coach who understands "
         "technical and behavioral hiring processes. "
@@ -252,48 +184,31 @@ interview_agent = Agent(
         "keeping those answers truthful and grounded in their "
         "real experience."
     ),
-
     **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
 # ============================================================
-# 7. Critic Agent
+# 7. CRITIC AGENT
 # ============================================================
 
 critic_agent = Agent(
     role="Career Application Quality Reviewer",
-
     goal=(
-        "Review the complete career application package and "
+        "Review the supplied career application information and "
         "identify missing requirements, weak evidence, generic "
         "content, inconsistencies, unsupported claims, "
         "application weaknesses, and interview preparation gaps."
     ),
-
     backstory=(
         "You are a meticulous quality reviewer for professional "
-        "job applications. You examine the job analysis, CV "
-        "match, company research, application materials, and "
-        "interview preparation. "
-        "You provide specific and actionable feedback that "
-        "can be used to improve the final career package. "
-        "You never invent facts about the candidate."
+        "job applications. You identify specific and actionable "
+        "improvements. You never invent facts about the candidate."
     ),
-
     **COMMON_AGENT_SETTINGS,
     allow_delegation=False,
 )
 
 
-# ============================================================
-# Optional Debug Information
-# ============================================================
-
-# This appears in the Streamlit terminal/logs, not as a
-# large UI component.
-
-print(
-    f"CareerOps AI Gemini model configured: {GEMINI_MODEL}"
-)
+print(f"CareerOps AI Gemini model configured: {GEMINI_MODEL}")
