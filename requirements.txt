@@ -1,0 +1,7 @@
+streamlit
+crewai
+crewai-tools
+google-generativeai
+pypdf
+requests
+beautifulsoup4
