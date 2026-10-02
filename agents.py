@@ -27,19 +27,58 @@ GEMINI_API_KEY = get_gemini_api_key()
 if not GEMINI_API_KEY:
     raise ValueError(
         "GEMINI_API_KEY is not configured. "
-        "Add it to Streamlit Secrets."
+        "Add GEMINI_API_KEY to Streamlit Secrets."
     )
+
+
+# ============================================================
+# Gemini Model Configuration
+# ============================================================
+
+# Can be changed from Streamlit Secrets/environment variables
+# without editing this file.
+#
+# Example:
+# GEMINI_MODEL=gemini-3.7-flash
+#
+# Current default:
+# gemini-3.8-flash
+
+GEMINI_MODEL = (
+    os.getenv("GEMINI_MODEL")
+    or st.secrets.get("GEMINI_MODEL", "gemini-3.8-flash")
+)
 
 
 # ============================================================
 # Shared Gemini LLM
 # ============================================================
 
+# IMPORTANT:
+#
+# Gemini 3.8 Flash currently does not use the old temperature,
+# top_p, or top_k parameters.
+#
+# Therefore we intentionally do NOT pass:
+#
+#     temperature=0.2
+#
+# here.
+
 gemini_llm = LLM(
-    model="gemini/gemini-3.8-flash",
+    model=f"gemini/{GEMINI_MODEL}",
     api_key=GEMINI_API_KEY,
-    temperature=0.2
 )
+
+
+# ============================================================
+# Common Agent Settings
+# ============================================================
+
+COMMON_AGENT_SETTINGS = {
+    "llm": gemini_llm,
+    "verbose": True,
+}
 
 
 # ============================================================
@@ -50,25 +89,28 @@ manager_agent = Agent(
     role="Career Operations Manager",
 
     goal=(
-        "Understand the user's career request, determine which "
-        "career analysis activities are required, coordinate the "
-        "specialized agents, and ensure the final career package "
-        "addresses the user's request."
+        "Understand the user's career request and ensure that "
+        "the complete career analysis addresses the user's goals. "
+        "Review the outputs from the specialized career agents "
+        "and produce a concise final manager-level summary."
     ),
 
     backstory=(
         "You are an experienced career operations manager. "
-        "You coordinate a team of specialists including job "
-        "analysts, CV reviewers, researchers, application writers, "
-        "interview coaches, and quality reviewers. "
-        "You focus on keeping the career workflow organized "
-        "and ensuring that every important part of the user's "
-        "request is addressed."
+        "You coordinate a structured career workflow involving "
+        "job analysis, CV analysis, company research, application "
+        "writing, interview preparation, and quality review. "
+        "You focus on consistency, completeness, and actionable "
+        "career guidance."
     ),
 
     llm=gemini_llm,
     verbose=True,
-    allow_delegation=True
+
+    # The Crew already controls the workflow sequentially.
+    # Keeping delegation disabled prevents unnecessary extra
+    # agent calls.
+    allow_delegation=False,
 )
 
 
@@ -80,23 +122,25 @@ job_analyst_agent = Agent(
     role="Job Description Analyst",
 
     goal=(
-        "Analyze job descriptions and extract the important "
-        "requirements, responsibilities, qualifications, skills, "
-        "experience requirements, education requirements, and "
-        "keywords needed for the position."
+        "Analyze the target job description and identify the "
+        "important requirements, responsibilities, qualifications, "
+        "technical skills, soft skills, experience requirements, "
+        "education requirements, keywords, and preferred "
+        "qualifications."
     ),
 
     backstory=(
         "You are an expert recruitment and job-description "
         "analyst. You understand how employers describe roles "
         "and how applicant tracking systems identify relevant "
-        "skills and keywords. You carefully distinguish required "
-        "qualifications from preferred qualifications."
+        "skills and keywords. You distinguish clearly between "
+        "required qualifications and preferred qualifications. "
+        "You do not invent requirements that are not supported "
+        "by the job description."
     ),
 
-    llm=gemini_llm,
-    verbose=True,
-    allow_delegation=False
+    **COMMON_AGENT_SETTINGS,
+    allow_delegation=False,
 )
 
 
@@ -109,22 +153,23 @@ cv_agent = Agent(
 
     goal=(
         "Analyze the candidate's CV and compare the candidate's "
-        "skills, education, projects, work experience, and "
-        "achievements against the requirements of the target job."
+        "skills, education, projects, work experience, "
+        "achievements, certifications, and technical background "
+        "against the requirements of the target job."
     ),
 
     backstory=(
         "You are an experienced CV reviewer and recruitment "
-        "specialist. You identify evidence in a candidate's "
-        "background that is relevant to a job and identify "
-        "important requirements that are not sufficiently "
-        "supported by the CV. You never invent qualifications "
-        "or experience."
+        "specialist. You identify concrete evidence in a "
+        "candidate's background that is relevant to a job. "
+        "You identify important requirements that are missing "
+        "or insufficiently supported by the CV. "
+        "You never invent qualifications, experience, "
+        "achievements, or skills."
     ),
 
-    llm=gemini_llm,
-    verbose=True,
-    allow_delegation=False
+    **COMMON_AGENT_SETTINGS,
+    allow_delegation=False,
 )
 
 
@@ -136,24 +181,23 @@ research_agent = Agent(
     role="Company and Opportunity Research Specialist",
 
     goal=(
-        "Research the organization and job opportunity and "
+        "Analyze the organization and job opportunity and "
         "provide useful factual context about the company, "
-        "its products or services, industry, and relevant "
-        "information that can improve the candidate's application "
-        "and interview preparation."
+        "its products or services, industry, role context, "
+        "and information that can improve the candidate's "
+        "application and interview preparation."
     ),
 
     backstory=(
         "You are a professional company research analyst. "
-        "You focus on finding relevant, reliable information "
-        "about organizations and connecting that information "
-        "to the specific job opportunity. You distinguish "
-        "verified information from assumptions."
+        "You focus on reliable factual information and clearly "
+        "distinguish verified information from assumptions. "
+        "You connect company and role information to the "
+        "candidate's application strategy."
     ),
 
-    llm=gemini_llm,
-    verbose=True,
-    allow_delegation=False
+    **COMMON_AGENT_SETTINGS,
+    allow_delegation=False,
 )
 
 
@@ -165,23 +209,23 @@ application_agent = Agent(
     role="Professional Application Specialist",
 
     goal=(
-        "Create tailored and truthful application materials "
-        "using the job analysis, candidate CV, and company "
-        "research."
+        "Create tailored, professional, and truthful application "
+        "materials using the job analysis, candidate CV analysis, "
+        "company research, and user's career request."
     ),
 
     backstory=(
         "You are an expert professional application writer. "
         "You create targeted professional summaries, CV "
-        "improvement suggestions, cover letters, and application "
-        "answers. You tailor the content to the specific role "
-        "without inventing experience, skills, achievements, "
-        "or qualifications."
+        "improvement suggestions, cover letters, application "
+        "answers, and application strategies. "
+        "You tailor content to the specific role without "
+        "inventing experience, skills, achievements, "
+        "qualifications, or employment history."
     ),
 
-    llm=gemini_llm,
-    verbose=True,
-    allow_delegation=False
+    **COMMON_AGENT_SETTINGS,
+    allow_delegation=False,
 )
 
 
@@ -193,23 +237,24 @@ interview_agent = Agent(
     role="Interview Preparation Coach",
 
     goal=(
-        "Prepare the candidate for an interview by generating "
-        "job-specific technical, behavioral, and situational "
-        "questions together with useful preparation guidance."
+        "Prepare the candidate for the target interview by "
+        "generating job-specific technical, behavioral, "
+        "situational, and role-specific questions together "
+        "with practical preparation guidance."
     ),
 
     backstory=(
         "You are an experienced interview coach who understands "
-        "technical and behavioral hiring processes. You create "
-        "questions based on the actual job requirements and "
-        "candidate background. You help candidates structure "
-        "strong answers while keeping their answers truthful "
-        "and grounded in their real experience."
+        "technical and behavioral hiring processes. "
+        "You create questions based on the actual job requirements "
+        "and candidate background. "
+        "You help candidates structure strong answers while "
+        "keeping those answers truthful and grounded in their "
+        "real experience."
     ),
 
-    llm=gemini_llm,
-    verbose=True,
-    allow_delegation=False
+    **COMMON_AGENT_SETTINGS,
+    allow_delegation=False,
 )
 
 
@@ -223,20 +268,32 @@ critic_agent = Agent(
     goal=(
         "Review the complete career application package and "
         "identify missing requirements, weak evidence, generic "
-        "content, inconsistencies, unsupported claims, and "
-        "interview preparation gaps."
+        "content, inconsistencies, unsupported claims, "
+        "application weaknesses, and interview preparation gaps."
     ),
 
     backstory=(
         "You are a meticulous quality reviewer for professional "
         "job applications. You examine the job analysis, CV "
         "match, company research, application materials, and "
-        "interview preparation. You provide specific and "
-        "actionable feedback that another agent can use to "
-        "improve the final package."
+        "interview preparation. "
+        "You provide specific and actionable feedback that "
+        "can be used to improve the final career package. "
+        "You never invent facts about the candidate."
     ),
 
-    llm=gemini_llm,
-    verbose=True,
-    allow_delegation=False
+    **COMMON_AGENT_SETTINGS,
+    allow_delegation=False,
+)
+
+
+# ============================================================
+# Optional Debug Information
+# ============================================================
+
+# This appears in the Streamlit terminal/logs, not as a
+# large UI component.
+
+print(
+    f"CareerOps AI Gemini model configured: {GEMINI_MODEL}"
 )
