@@ -1,4 +1,3 @@
-```python
 import os
 import tempfile
 
@@ -1143,4 +1142,3 @@ if st.session_state.analysis_started:
             "⏳ Career analysis is running. "
             "Results will appear here when processing completes."
         )
-```
